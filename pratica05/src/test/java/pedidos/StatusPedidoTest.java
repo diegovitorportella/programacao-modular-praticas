@@ -28,57 +28,37 @@ class StatusPedidoTest {
         System.out.println("[StatusPedidoTest] teste finalizado: " + info.getDisplayName());
     }
 
-    @ParameterizedTest
-    @EnumSource(value = StatusPedido.class, names = {"ENTREGUE", "CANCELADO"})
-    @DisplayName("ENTREGUE e CANCELADO são finais e não transitam para nada")
-    void statusFinaisNaoTransitam(StatusPedido final_) {
-        assertTrue(final_.isFinal());
-        assertNull(final_.proximo());
-        for (StatusPedido destino : todos) {
-            assertFalse(final_.podeTransicionarPara(destino),
-                    final_ + " não deveria ir para " + destino);
-        }
+    @Test
+    @DisplayName("tem os 5 status do enunciado, na ordem")
+    void deveTerOsStatusDoEnunciado() {
+        assertEquals(5, todos.length);
+        assertEquals(StatusPedido.PENDENTE, todos[0]);
+        assertEquals(StatusPedido.CANCELADO, todos[4]);
+    }
+
+    @Test
+    @DisplayName("regra do enum: ENTREGUE não pode ser alterado")
+    void entregueNaoPodeSerAlterado() {
+        assertFalse(StatusPedido.ENTREGUE.podeSerAlterado());
     }
 
     @ParameterizedTest
-    @EnumSource(value = StatusPedido.class, names = {"CRIADO", "PAGO", "EM_PREPARACAO", "ENVIADO"})
-    @DisplayName("status em andamento não são finais")
-    void statusEmAndamentoNaoSaoFinais(StatusPedido status) {
-        assertFalse(status.isFinal());
+    @EnumSource(value = StatusPedido.class, names = "ENTREGUE", mode = EnumSource.Mode.EXCLUDE)
+    @DisplayName("os demais status podem ser alterados")
+    void demaisStatusPodemSerAlterados(StatusPedido status) {
+        assertTrue(status.podeSerAlterado());
     }
 
     @ParameterizedTest(name = "{0} -> proximo = {1}")
-    @CsvSource({
-        "CRIADO, PAGO",
-        "PAGO, EM_PREPARACAO",
-        "EM_PREPARACAO, ENVIADO",
-        "ENVIADO, ENTREGUE"
-    })
+    @CsvSource({"PENDENTE, PROCESSANDO", "PROCESSANDO, ENVIADO", "ENVIADO, ENTREGUE"})
     void proximoDoFluxo(StatusPedido atual, StatusPedido esperado) {
         assertEquals(esperado, atual.proximo());
-        assertTrue(atual.podeTransicionarPara(esperado));
     }
 
     @ParameterizedTest
-    @EnumSource(value = StatusPedido.class, names = {"CRIADO", "PAGO", "EM_PREPARACAO", "ENVIADO"})
-    @DisplayName("qualquer status em andamento pode ser cancelado")
-    void podeCancelarEmAndamento(StatusPedido status) {
-        assertTrue(status.podeTransicionarPara(StatusPedido.CANCELADO));
-    }
-
-    @Test
-    @DisplayName("não permite voltar nem pular etapas")
-    void naoPermiteVoltarNemPular() {
-        assertFalse(StatusPedido.PAGO.podeTransicionarPara(StatusPedido.CRIADO));
-        assertFalse(StatusPedido.CRIADO.podeTransicionarPara(StatusPedido.ENVIADO));
-        assertFalse(StatusPedido.CRIADO.podeTransicionarPara(StatusPedido.CRIADO));
-    }
-
-    @Test
-    @DisplayName("destino nulo nunca é permitido")
-    void destinoNuloNaoEPermitido() {
-        for (StatusPedido status : todos) {
-            assertFalse(status.podeTransicionarPara(null));
-        }
+    @EnumSource(value = StatusPedido.class, names = {"ENTREGUE", "CANCELADO"})
+    @DisplayName("ENTREGUE e CANCELADO não têm próximo status")
+    void semProximo(StatusPedido status) {
+        assertNull(status.proximo());
     }
 }

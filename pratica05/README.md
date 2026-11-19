@@ -1,21 +1,16 @@
 # Prática 5 - Testes Automatizados com JUnit
 
-Sistema de pedidos com testes JUnit 5 (Maven, Java 17+).
-
-## Domínio (`src/main/java/pedidos`)
-- `Pedido` (abstrata): itens, status, `processar()`, `alterarStatus()`, `calcularValorFinal()`
-  - `PedidoFisico`: subtotal + frete
-  - `PedidoEletronico`: 10% de desconto
-  - `PedidoAssinatura`: subtotal mensal x meses, 20% de desconto a partir de 12 meses
-- `ItemPedido`: produto, preço unitário e quantidade
-- `StatusPedido` (enum): fluxo CRIADO → PAGO → EM_PREPARACAO → ENVIADO → ENTREGUE; ENTREGUE e CANCELADO são finais
-- `excecoes/`: `PedidoException`, `PedidoVazioException`, `StatusInvalidoException`
-- `Main`: apenas demonstração, sem regra de negócio
+Testes automatizados (JUnit 5) do sistema de pedidos da **Prática 4** (Maven, Java 17+).
+O código de `src/main` é o da Prática 4; a regra de negócio da lista de pedidos fica em
+`GerenciadorPedidos`, e a `Main` só cuida do menu, então nada é testado pela `Main`.
 
 ## Testes (`src/test/java/pedidos`)
-- `PedidoTestBase`: testes comuns a todos os tipos de pedido (processamento, regra do ENTREGUE, exceções). `PedidoFisicoTest`, `PedidoEletronicoTest` e `PedidoAssinaturaTest` herdam dela, então tudo roda para cada tipo.
-- `ItemPedidoTest`, `StatusPedidoTest`
-- `@BeforeEach` instancia objetos antes de cada teste; `@AfterEach` imprime que o teste terminou.
+- `PedidoTestBase`: testes comuns a todos os tipos (construção, `ValorInvalidoException`, `PedidoInvalidoException`, fluxo de status, regra do ENTREGUE, exceções do Java). `PedidoTest`, `PedidoEletronicoTest`, `PedidoRoupaTest` e `PedidoAlimentoTest` herdam dela, então tudo roda para cada tipo.
+- `PedidoEletronicoTest`, `PedidoRoupaTest`, `PedidoAlimentoTest`: valor final (limites 100 e 200), frete e se é entregável
+- `StatusPedidoTest`: regra do enum (ENTREGUE não pode ser alterado) e fluxo
+- `CategoriaTest`
+- `GerenciadorPedidosTest`: processamento e remoção de cancelados (Iterator), listagens
+- `@BeforeEach` instancia os objetos antes de cada teste; `@AfterEach` imprime que o teste terminou.
 
 ## Executar
 ```

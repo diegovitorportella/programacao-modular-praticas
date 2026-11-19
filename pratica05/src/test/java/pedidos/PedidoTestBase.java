@@ -1,10 +1,10 @@
 package pedidos;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.math.BigDecimal;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,28 +12,29 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import pedidos.excecoes.PedidoVazioException;
-import pedidos.excecoes.StatusInvalidoException;
+import org.junit.jupiter.params.provider.ValueSource;
+import pedidos.excecoes.PedidoInvalidoException;
+import pedidos.excecoes.ValorInvalidoException;
 
 /**
- * Testes comuns a TODOS os tipos de pedido (processamento, regra do ENTREGUE,
- * exceções). Cada classe de teste concreta só informa como criar o seu pedido,
- * então estes testes rodam automaticamente para cada tipo.
- *
- * Todo pedido de teste começa com subtotal de 120,00 (2 x 50,00 + 1 x 20,00).
+ * Testes comuns a TODOS os tipos de pedido: validação do construtor, processamento,
+ * mudança de status, regra do ENTREGUE e exceções. As classes concretas só informam
+ * como criar o seu pedido e a categoria esperada, então tudo roda para cada tipo.
  */
 abstract class PedidoTestBase<T extends Pedido> {
 
+    protected static final double VALOR_PADRAO = 150.0;
+
     protected T pedido;
 
-    protected abstract T criarPedido(String cliente);
+    protected abstract T criarPedido(int id, String cliente, double valor) throws ValorInvalidoException;
 
-    /** Instancia o pedido e inicializa os itens antes de cada teste. */
+    protected abstract Categoria categoriaEsperada();
+
+    /** Instancia o pedido e inicializa os valores antes de cada teste. */
     @BeforeEach
     void inicializar() throws Exception {
-        pedido = criarPedido("Ana");
-        pedido.adicionarItem(new ItemPedido("Produto A", new BigDecimal("50.00"), 2));
-        pedido.adicionarItem(new ItemPedido("Produto B", new BigDecimal("20.00"), 1));
+        pedido = criarPedido(1, "Ana", VALOR_PADRAO);
     }
 
     /** Informa que o teste foi finalizado. */
@@ -43,74 +44,106 @@ abstract class PedidoTestBase<T extends Pedido> {
                 + info.getDisplayName());
     }
 
-    // ---------- valor final ----------
+    /** Leva o pedido até ENTREGUE pelo fluxo normal. */
+    private void entregar() throws PedidoInvalidoException {
+        while (pedido.getStatus() != StatusPedido.ENTREGUE) {
+            pedido.processarPedido();
+        }
+    }
+
+    // ---------- construção ----------
 
     @Test
-    @DisplayName("subtotal soma os itens")
-    void subtotalDeveSomarItens() {
-        assertEquals(new BigDecimal("120.00"), pedido.getSubtotal());
+    @DisplayName("pedido novo guarda os dados e começa PENDENTE")
+    void pedidoNovoDeveGuardarDadosEEstarPendente() {
+        assertEquals(1, pedido.getId());
+        assertEquals("Ana", pedido.getNomeCliente());
+        assertEquals(VALOR_PADRAO, pedido.getValor());
+        assertEquals(StatusPedido.PENDENTE, pedido.getStatus());
+        assertEquals(categoriaEsperada(), pedido.getCategoria());
+        assertFalse(pedido.isCancelado());
+    }
+
+    // ---------- exceção personalizada: ValorInvalidoException ----------
+
+    @ParameterizedTest(name = "valor {0} lança ValorInvalidoException")
+    @ValueSource(doubles = {0, -0.01, -100, Double.NaN})
+    void valorMenorOuIgualAZeroDeveLancarExcecao(double valor) {
+        ValorInvalidoException e = assertThrows(ValorInvalidoException.class,
+                () -> criarPedido(2, "Bia", valor));
+        assertTrue(e.getMessage().contains("maior que zero"));
     }
 
     @Test
-    @DisplayName("valor final de pedido vazio considera só a regra do tipo")
-    void valorFinalDePedidoVazioNaoDeveFalhar() {
-        T vazio = criarPedido("Bia");
-        assertEquals(0, vazio.getSubtotal().signum());
-        assertTrue(vazio.calcularValorFinal().signum() >= 0);
+    @DisplayName("menor valor positivo é aceito")
+    void valorMinimoPositivoDeveSerAceito() throws Exception {
+        assertEquals(0.01, criarPedido(2, "Bia", 0.01).getValor());
     }
 
-    // ---------- processamento e status ----------
+    // ---------- exceções do Java ----------
 
     @Test
-    @DisplayName("pedido novo começa como CRIADO")
-    void pedidoNovoDeveEstarCriado() {
-        assertEquals(StatusPedido.CRIADO, pedido.getStatus());
+    @DisplayName("cliente nulo lança IllegalArgumentException")
+    void clienteNuloDeveLancarExcecao() {
+        assertThrows(IllegalArgumentException.class, () -> criarPedido(2, null, 10));
     }
 
     @Test
-    @DisplayName("processar percorre todo o fluxo até ENTREGUE")
-    void processarDeveAvancarStatusAteEntregue() throws Exception {
+    @DisplayName("cliente em branco lança IllegalArgumentException")
+    void clienteEmBrancoDeveLancarExcecao() {
+        assertThrows(IllegalArgumentException.class, () -> criarPedido(2, "  ", 10));
+    }
+
+    @Test
+    @DisplayName("alterar para status nulo lança NullPointerException")
+    void statusNuloDeveLancarNullPointer() {
+        assertThrows(NullPointerException.class, () -> pedido.alterarStatus(null));
+    }
+
+    // ---------- processamento: alteração do status ----------
+
+    @Test
+    @DisplayName("processar percorre PENDENTE → PROCESSANDO → ENVIADO → ENTREGUE")
+    void processarDeveAvancarStatus() throws Exception {
         StatusPedido[] esperado = {
-            StatusPedido.PAGO, StatusPedido.EM_PREPARACAO,
-            StatusPedido.ENVIADO, StatusPedido.ENTREGUE
+            StatusPedido.PROCESSANDO, StatusPedido.ENVIADO, StatusPedido.ENTREGUE
         };
         for (StatusPedido proximo : esperado) {
-            pedido.processar();
+            pedido.processarPedido();
             assertEquals(proximo, pedido.getStatus());
         }
     }
 
-    @Test
-    @DisplayName("alterarStatus permite cancelar um pedido em andamento")
-    void deveCancelarPedidoEmAndamento() throws Exception {
-        pedido.processar();
-        pedido.alterarStatus(StatusPedido.CANCELADO);
-        assertEquals(StatusPedido.CANCELADO, pedido.getStatus());
+    @ParameterizedTest(name = "alterarStatus({0}) em pedido PENDENTE")
+    @EnumSource(StatusPedido.class)
+    void alterarStatusDevePermitirQualquerStatusEmPedidoNaoEntregue(StatusPedido novo)
+            throws Exception {
+        pedido.alterarStatus(novo);
+        assertEquals(novo, pedido.getStatus());
     }
 
+    // ---------- exceção personalizada: PedidoInvalidoException ----------
+
     @Test
-    @DisplayName("alterarStatus não permite pular etapas")
-    void naoDevePularEtapas() {
-        StatusInvalidoException e = assertThrows(StatusInvalidoException.class,
-                () -> pedido.alterarStatus(StatusPedido.ENVIADO));
-        assertEquals(StatusPedido.CRIADO, e.getAtual());
-        assertEquals(StatusPedido.ENVIADO, e.getDestino());
-        assertEquals(StatusPedido.CRIADO, pedido.getStatus());
+    @DisplayName("processar pedido cancelado lança PedidoInvalidoException")
+    void processarCanceladoDeveLancarExcecao() throws Exception {
+        pedido.alterarStatus(StatusPedido.CANCELADO);
+        PedidoInvalidoException e = assertThrows(PedidoInvalidoException.class,
+                () -> pedido.processarPedido());
+        assertTrue(e.getMessage().contains("cancelado"));
+        assertEquals(StatusPedido.CANCELADO, pedido.getStatus());
+        assertTrue(pedido.isCancelado());
     }
 
     // ---------- regra do enum: ENTREGUE não pode ser alterado ----------
-
-    private void entregar() throws Exception {
-        while (pedido.getStatus() != StatusPedido.ENTREGUE) {
-            pedido.processar();
-        }
-    }
 
     @ParameterizedTest(name = "pedido ENTREGUE não pode virar {0}")
     @EnumSource(StatusPedido.class)
     void pedidoEntregueNaoPodeSerAlterado(StatusPedido destino) throws Exception {
         entregar();
-        assertThrows(StatusInvalidoException.class, () -> pedido.alterarStatus(destino));
+        PedidoInvalidoException e = assertThrows(PedidoInvalidoException.class,
+                () -> pedido.alterarStatus(destino));
+        assertTrue(e.getMessage().contains("entregue"));
         assertEquals(StatusPedido.ENTREGUE, pedido.getStatus());
     }
 
@@ -118,56 +151,27 @@ abstract class PedidoTestBase<T extends Pedido> {
     @DisplayName("pedido ENTREGUE não pode ser processado de novo")
     void pedidoEntregueNaoPodeSerProcessado() throws Exception {
         entregar();
-        StatusInvalidoException e = assertThrows(StatusInvalidoException.class,
-                () -> pedido.processar());
-        assertEquals(StatusPedido.ENTREGUE, e.getAtual());
+        assertThrows(PedidoInvalidoException.class, () -> pedido.processarPedido());
         assertEquals(StatusPedido.ENTREGUE, pedido.getStatus());
     }
 
     @Test
-    @DisplayName("pedido ENTREGUE não aceita novos itens")
-    void pedidoEntregueNaoAceitaItens() throws Exception {
-        entregar();
-        int antes = pedido.getItens().size();
-        assertThrows(StatusInvalidoException.class,
-                () -> pedido.adicionarItem(new ItemPedido("Extra", BigDecimal.TEN, 1)));
-        assertEquals(antes, pedido.getItens().size());
+    @DisplayName("pedido cancelado pode ser reaberto manualmente (só ENTREGUE é final)")
+    void pedidoCanceladoPodeSerAlterado() throws Exception {
+        pedido.alterarStatus(StatusPedido.CANCELADO);
+        pedido.alterarStatus(StatusPedido.PENDENTE);
+        assertEquals(StatusPedido.PENDENTE, pedido.getStatus());
     }
 
-    // ---------- exceções personalizadas ----------
+    // ---------- apresentação ----------
 
     @Test
-    @DisplayName("processar pedido sem itens lança PedidoVazioException")
-    void processarPedidoVazioDeveLancarExcecao() {
-        T vazio = criarPedido("Bia");
-        PedidoVazioException e = assertThrows(PedidoVazioException.class, vazio::processar);
-        assertTrue(e.getMessage().contains(String.valueOf(vazio.getId())));
-        assertEquals(StatusPedido.CRIADO, vazio.getStatus());
-    }
-
-    // ---------- exceções do Java ----------
-
-    @Test
-    @DisplayName("cliente nulo lança NullPointerException")
-    void clienteNuloDeveLancarNullPointer() {
-        assertThrows(NullPointerException.class, () -> criarPedido(null));
-    }
-
-    @Test
-    @DisplayName("cliente em branco lança IllegalArgumentException")
-    void clienteEmBrancoDeveLancarIllegalArgument() {
-        assertThrows(IllegalArgumentException.class, () -> criarPedido("  "));
-    }
-
-    @Test
-    @DisplayName("adicionar item nulo lança NullPointerException")
-    void itemNuloDeveLancarNullPointer() {
-        assertThrows(NullPointerException.class, () -> pedido.adicionarItem(null));
-    }
-
-    @Test
-    @DisplayName("lista de itens é somente leitura (UnsupportedOperationException)")
-    void listaDeItensNaoPodeSerModificadaPorFora() {
-        assertThrows(UnsupportedOperationException.class, () -> pedido.getItens().clear());
+    @DisplayName("toString traz id, cliente, categoria e status")
+    void toStringDeveTrazerDadosPrincipais() {
+        String texto = pedido.toString();
+        assertTrue(texto.contains("#1"));
+        assertTrue(texto.contains("Ana"));
+        assertTrue(texto.contains(categoriaEsperada().name()));
+        assertTrue(texto.contains("PENDENTE"));
     }
 }

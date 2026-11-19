@@ -2,38 +2,34 @@ package pedidos;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import pedidos.excecoes.ValorInvalidoException;
 
 /**
- * Testes da classe base Pedido. Como ela é abstrata, usa-se uma subclasse mínima
- * que não aplica desconto nem acréscimo (valor final = subtotal). Os testes de
- * processamento, status, regra do ENTREGUE e exceções vêm de PedidoTestBase.
+ * Testes da classe base Pedido. Por ser abstrata, usa uma subclasse mínima sem desconto
+ * nem frete. Os testes de construção, processamento, status e exceções vêm de PedidoTestBase.
  */
 class PedidoTest extends PedidoTestBase<Pedido> {
 
     @Override
-    protected Pedido criarPedido(String cliente) {
-        return new Pedido(1, cliente) {
+    protected Pedido criarPedido(int id, String cliente, double valor) throws ValorInvalidoException {
+        return new Pedido(id, cliente, valor, Categoria.ALIMENTO) {
             @Override
-            protected BigDecimal calcularTotal(BigDecimal subtotal) {
-                return subtotal;
+            public double calcularValorFinal() {
+                return getValor();
             }
         };
     }
 
-    @Test
-    @DisplayName("valor final da base = subtotal arredondado para 2 casas")
-    void valorFinalDaBaseDeveSerOSubtotal() {
-        assertEquals(new BigDecimal("120.00"), pedido.calcularValorFinal());
+    @Override
+    protected Categoria categoriaEsperada() {
+        return Categoria.ALIMENTO;
     }
 
     @Test
-    @DisplayName("guarda id, cliente e itens")
-    void deveGuardarDados() {
-        assertEquals(1, pedido.getId());
-        assertEquals("Ana", pedido.getCliente());
-        assertEquals(2, pedido.getItens().size());
+    @DisplayName("implementa Processavel")
+    void deveSerProcessavel() {
+        assertEquals(VALOR_PADRAO, ((Processavel) pedido).calcularValorFinal());
     }
 }
